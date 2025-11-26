@@ -10,18 +10,33 @@ import {
   Menu, 
   Lock, 
   ArrowLeft, 
+  MessageSquare,
+  Edit,
+  ExternalLink,
+  BarChart3 // Иконка для опроса
 } from 'lucide-react';
-import { client } from '@/sanity/client'; // Наш мост
-import { PortableText } from '@portabletext/react'; // Рендер текста
-import imageUrlBuilder from '@sanity/image-url'; // Строитель ссылок на картинки
+import { client } from '@/sanity/client'; 
+import { PortableText } from '@portabletext/react'; 
+import imageUrlBuilder from '@sanity/image-url'; 
+import Giscus from '@giscus/react'; 
 
-// --- Image Builder Setup ---
-// Эта штука превращает странные данные Sanity в нормальную ссылку на картинку
+// --- Image Builder ---
 const builder = imageUrlBuilder(client);
-
 function urlFor(source: any) {
   return builder.image(source);
 }
+
+// --- Helper: Extract Poll ID ---
+// Превращает https://strawpoll.com/XOgON1N0Qn3 -> https://strawpoll.com/embed/XOgON1N0Qn3
+const getEmbedUrl = (url: string) => {
+  try {
+    if (!url) return '';
+    const pollId = url.split('/').pop(); // Берет последнее слово из ссылки
+    return `https://strawpoll.com/embed/${pollId}`;
+  } catch (e) {
+    return '';
+  }
+};
 
 // --- Types ---
 type CategoryId = 'all' | 'devblog' | 'lore' | 'premium';
@@ -33,6 +48,7 @@ interface Post {
   label: string;
   publishedAt: string;
   isPremium: boolean;
+  allowComments: boolean;
   content: any;
 }
 
@@ -57,20 +73,18 @@ const themes: Record<CategoryId, ThemeConfig> = {
   premium: { className: 'theme-premium', subtitle: 'Restricted Area', bgImage: 'radial-gradient(circle at bottom right, #e11d4815 0%, transparent 60%)' },
 };
 
-// --- Custom Portable Text Components ---
-// Вот здесь мы учим сайт рисовать картинки внутри текста
+// --- PORTABLE TEXT COMPONENTS (СЮДА СМОТРИ) ---
 const ptComponents = {
   types: {
+    // Картинки
     image: ({ value }: any) => {
-      if (!value?.asset?._ref) {
-        return null;
-      }
+      if (!value?.asset?._ref) return null;
       return (
-        <figure className="my-8">
+        <figure className="my-8 group">
           <img
             src={urlFor(value).width(1200).fit('max').auto('format').url()}
-            alt={value.alt || 'Content Image'}
-            className="rounded-lg shadow-2xl border border-white/10 w-full object-cover max-h-[600px]"
+            alt={value.alt || 'Image'}
+            className="rounded-lg shadow-2xl border border-white/10 w-full object-cover max-h-[600px] group-hover:border-white/30 transition-colors"
           />
           {value.caption && (
             <figcaption className="text-center text-xs text-white/40 mt-2 font-mono uppercase tracking-widest">
@@ -78,6 +92,25 @@ const ptComponents = {
             </figcaption>
           )}
         </figure>
+      );
+    },
+    // Опросы (НОВОЕ!)
+    strawpoll: ({ value }: any) => {
+      if (!value?.url) return null;
+      const embedUrl = getEmbedUrl(value.url);
+      
+      return (
+        <div className="my-10 bg-[#111] border border-white/10 rounded-xl overflow-hidden shadow-2xl">
+          <div className="bg-white/5 px-4 py-2 border-b border-white/5 flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-blue-400">
+            <BarChart3 className="w-4 h-4" />
+            Голосование
+          </div>
+          <iframe 
+            src={embedUrl} 
+            className="w-full h-[450px] border-none" // Высота может меняться
+            title="StrawPoll Embed"
+          ></iframe>
+        </div>
       );
     }
   }
@@ -90,7 +123,7 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Загрузка данных
+  // Загрузка
   useEffect(() => {
     const fetchPosts = async () => {
       try {
@@ -98,7 +131,7 @@ export default function Home() {
         const data = await client.fetch(query);
         setPosts(data);
       } catch (error) {
-        console.error("Ошибка:", error);
+        console.error("Err:", error);
       } finally {
         setLoading(false);
       }
@@ -106,7 +139,7 @@ export default function Home() {
     fetchPosts();
   }, []);
 
-  // Смена темы
+  // Темы
   useEffect(() => {
     setCurrentTheme(themes[activeCategory]);
   }, [activeCategory]);
@@ -122,14 +155,10 @@ export default function Home() {
 
   const getThemeVariables = () => {
     switch (activeCategory) {
-      case 'devblog':
-        return { '--bg-main': '#020617', '--sidebar-bg': '#0f172a', '--accent-color': '#06b6d4', '--text-primary': '#f1f5f9', '--text-secondary': '#64748b', '--card-border': '#1e293b' } as React.CSSProperties;
-      case 'premium':
-        return { '--bg-main': '#000000', '--sidebar-bg': '#111111', '--accent-color': '#e11d48', '--text-primary': '#ffe4e6', '--text-secondary': '#9f1239', '--card-border': '#3f111b' } as React.CSSProperties;
-      case 'lore':
-        return { '--bg-main': '#0c0a09', '--sidebar-bg': '#1c1917', '--accent-color': '#a8a29e', '--text-primary': '#e7e5e4', '--text-secondary': '#78716c', '--card-border': '#292524' } as React.CSSProperties;
-      default:
-        return { '--bg-main': '#0a0a0a', '--sidebar-bg': '#111111', '--accent-color': '#d4d4d8', '--text-primary': '#ffffff', '--text-secondary': '#71717a', '--card-border': '#27272a' } as React.CSSProperties;
+      case 'devblog': return { '--bg-main': '#020617', '--sidebar-bg': '#0f172a', '--accent-color': '#06b6d4', '--text-primary': '#f1f5f9', '--text-secondary': '#64748b', '--card-border': '#1e293b' } as React.CSSProperties;
+      case 'premium': return { '--bg-main': '#000000', '--sidebar-bg': '#111111', '--accent-color': '#e11d48', '--text-primary': '#ffe4e6', '--text-secondary': '#9f1239', '--card-border': '#3f111b' } as React.CSSProperties;
+      case 'lore': return { '--bg-main': '#0c0a09', '--sidebar-bg': '#1c1917', '--accent-color': '#a8a29e', '--text-primary': '#e7e5e4', '--text-secondary': '#78716c', '--card-border': '#292524' } as React.CSSProperties;
+      default: return { '--bg-main': '#0a0a0a', '--sidebar-bg': '#111111', '--accent-color': '#d4d4d8', '--text-primary': '#ffffff', '--text-secondary': '#71717a', '--card-border': '#27272a' } as React.CSSProperties;
     }
   };
 
@@ -170,14 +199,19 @@ export default function Home() {
           })}
         </nav>
         <div className="hidden md:block p-6 border-t" style={{ borderColor: 'var(--card-border)' }}>
-           <div className="flex items-center gap-3 opacity-60 hover:opacity-100 transition-opacity">
-              <div className="w-8 h-8 rounded bg-white/5 border border-white/10 flex items-center justify-center"><User className="w-4 h-4 text-white" /></div>
-              <div className="text-xs"><p className="font-bold uppercase tracking-wide">ID: ADMIN</p><p style={{ color: 'var(--accent-color)' }}>Online</p></div>
+           <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 opacity-60">
+                  <div className="w-8 h-8 rounded bg-white/5 border border-white/10 flex items-center justify-center"><User className="w-4 h-4 text-white" /></div>
+                  <div className="text-xs"><p className="font-bold uppercase tracking-wide">GUEST</p><p className="text-xs opacity-50">Mode</p></div>
+              </div>
+              <a href="/studio" target="_blank" className="p-2 hover:bg-white/10 rounded transition-colors opacity-50 hover:opacity-100 group relative" title="Admin">
+                  <Edit className="w-4 h-4 text-white" />
+              </a>
            </div>
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
+      {/* MAIN */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative transition-all duration-700" style={{ backgroundImage: currentTheme.bgImage }}>
         <header className="md:hidden flex items-center justify-between px-4 py-4 border-b z-40" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>
             <h1 className="font-extrabold text-white text-lg tracking-tight uppercase">ПАРАЛЛЕЛЬ</h1>
@@ -187,15 +221,21 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto p-4 md:p-12 pb-24 md:pb-12 scroll-smooth z-10 relative">
           {activePost ? (
             <div className="max-w-3xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
-              <button onClick={() => setActivePostId(null)} className="flex items-center gap-2 text-xs font-mono uppercase opacity-50 hover:opacity-100 mb-8 transition-colors" style={{ color: 'var(--accent-color)' }}>
-                <ArrowLeft className="w-4 h-4" /> Return
-              </button>
+              <div className="flex justify-between items-center mb-8">
+                 <button onClick={() => setActivePostId(null)} className="flex items-center gap-2 text-xs font-mono uppercase opacity-50 hover:opacity-100 transition-colors" style={{ color: 'var(--accent-color)' }}>
+                   <ArrowLeft className="w-4 h-4" /> Return
+                 </button>
+                 <a href={`/studio/structure/post;${activePost._id}`} target="_blank" className="flex items-center gap-2 text-xs font-mono uppercase opacity-30 hover:opacity-100 transition-colors">
+                    <span className="hidden md:inline">Edit</span><ExternalLink className="w-3 h-3" />
+                 </a>
+              </div>
+
               {activePost.isPremium ? (
                 <div className="max-w-2xl mx-auto pt-10 text-center">
                   <div className="inline-block p-6 rounded-full border-2 mb-8 bg-white/5" style={{ borderColor: 'var(--card-border)' }}><Lock className="w-10 h-10" style={{ color: 'var(--accent-color)' }} /></div>
                   <h2 className="text-3xl font-bold text-white mb-4 uppercase tracking-wider">Доступ Запрещен</h2>
                   <p className="text-sm font-mono opacity-60 mb-10 max-w-md mx-auto">Данные зашифрованы. Требуется уровень допуска "Читатель".</p>
-                  <button className="border px-8 py-4 text-white font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>Купить Ключ Доступа</button>
+                  <a href="https://boosty.to/YOUR_PAGE" target="_blank" rel="noopener noreferrer" className="inline-block border px-8 py-4 text-white font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>Купить Ключ Доступа</a>
                 </div>
               ) : (
                 <article className="relative">
@@ -204,9 +244,34 @@ export default function Home() {
                       <div className="flex gap-4 text-xs font-mono opacity-60"><span>{formatDate(activePost.publishedAt)}</span><span>CAT: {activePost.category?.toUpperCase() || 'GENERAL'}</span></div>
                    </header>
                    <div className="prose max-w-none prose-invert prose-p:leading-relaxed prose-headings:text-white prose-a:text-blue-400 prose-img:rounded-xl">
-                      {/* Передаем наши кастомные компоненты сюда */}
+                      {/* --- ВОТ ЗДЕСЬ МАГИЯ --- */}
                       <PortableText value={activePost.content} components={ptComponents} />
                    </div>
+                   
+                   {/* Комментарии Giscus */}
+                   {activePost.allowComments && (
+                     <div className="mt-16 pt-10 border-t border-dashed" style={{ borderColor: 'var(--card-border)' }}>
+                       <div className="flex items-center gap-2 mb-6 opacity-60">
+                         <MessageSquare className="w-4 h-4" />
+                         <span className="text-xs font-mono uppercase tracking-widest">Secure Comms Channel</span>
+                       </div>
+                       <Giscus
+                          id="comments"
+                          repo="staerput-creator/parallel-app" 
+                          repoId="R_kgDONR2d_A"
+                          category="Announcements"
+                          categoryId="DIC_kwDONR2d_M4Ckce_"
+                          mapping="pathname"
+                          term="Welcome to Parallel"
+                          reactionsEnabled="1"
+                          emitMetadata="0"
+                          inputPosition="top"
+                          theme="transparent_dark"
+                          lang="ru"
+                          loading="lazy"
+                        />
+                     </div>
+                   )}
                 </article>
               )}
             </div>

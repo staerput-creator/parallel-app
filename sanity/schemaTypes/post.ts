@@ -53,6 +53,12 @@ export default defineType({
       initialValue: () => new Date().toISOString(),
     }),
     defineField({
+      name: 'allowComments',
+      title: '💬 Разрешить комментарии',
+      type: 'boolean',
+      initialValue: true,
+    }),
+    defineField({
       name: 'content',
       title: 'Текст статьи',
       type: 'array',
@@ -73,7 +79,8 @@ export default defineType({
               title: 'Alternative text', // Для слепых и SEO
             }
           ]
-        }
+        },
+        { type: 'strawpoll' } // <--- ВОТ ЭТА СТРОЧКА НОВАЯ
       ],
     }),
   ],
