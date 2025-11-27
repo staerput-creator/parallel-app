@@ -77,14 +77,16 @@ const themes: Record<CategoryId, ThemeConfig> = {
 const ptComponents = {
   types: {
     // Картинки
-    image: ({ value }: any) => {
+     image: ({ value }: any) => {
       if (!value?.asset?._ref) return null;
       return (
         <figure className="my-8 group">
           <img
             src={urlFor(value).width(1200).fit('max').auto('format').url()}
             alt={value.alt || 'Image'}
-            className="rounded-lg shadow-2xl border border-white/10 w-full object-cover max-h-[600px] group-hover:border-white/30 transition-colors"
+            // БЫЛО: object-cover max-h-[600px]
+            // СТАЛО: h-auto (высота подстраивается сама)
+            className="rounded-lg shadow-2xl border border-white/10 w-full h-auto group-hover:border-white/30 transition-colors"
           />
           {value.caption && (
             <figcaption className="text-center text-xs text-white/40 mt-2 font-mono uppercase tracking-widest">
