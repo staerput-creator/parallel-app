@@ -3,12 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Activity, Cpu, FileText, BookOpen, User, Menu, Lock, ArrowLeft, 
-  MessageSquare, Edit, ExternalLink, BarChart3 
+  MessageSquare, Edit, ExternalLink, BarChart3, Play 
 } from 'lucide-react';
 import { client } from '@/sanity/client'; 
 import { PortableText } from '@portabletext/react'; 
 import imageUrlBuilder from '@sanity/image-url'; 
 import Giscus from '@giscus/react'; 
+import Link from 'next/link';
 
 // --- Image Builder ---
 const builder = imageUrlBuilder(client);
@@ -39,6 +40,15 @@ interface Post {
   content: any;
 }
 
+// Добавляем тип для Главы
+interface Chapter {
+  _id: string;
+  title: string;
+  chapterNumber: number;
+  slug: { current: string };
+  coverUrl: string;
+}
+
 interface ThemeConfig {
   className: string;
   subtitle: string;
@@ -57,13 +67,12 @@ const themes: Record<CategoryId, ThemeConfig> = {
   all: { className: 'theme-neutral', subtitle: 'Общий обзор', bgImage: 'none' },
   devblog: { className: 'theme-devblog', subtitle: 'Dev Terminal', bgImage: 'linear-gradient(to right, #06b6d405 1px, transparent 1px), linear-gradient(to bottom, #06b6d405 1px, transparent 1px)' },
   lore: { className: 'theme-lore', subtitle: 'Archive Section', bgImage: 'radial-gradient(circle at center, #ffffff05 0%, transparent 70%)' },
-  premium: { className: 'theme-premium', subtitle: 'Restricted Area', bgImage: 'radial-gradient(circle at bottom right, #e11d4815 0%, transparent 60%)' },
+  premium: { className: 'theme-premium', subtitle: 'Restricted Area', bgImage: 'radial-gradient(circle at bottom right, #e11d4820 0%, transparent 60%)' },
 };
 
 // --- PORTABLE TEXT COMPONENTS ---
 const ptComponents = {
   types: {
-    // 1. Обычная картинка (на всю ширину)
     image: ({ value }: any) => {
       if (!value?.asset?._ref) return null;
       return (
@@ -77,7 +86,6 @@ const ptComponents = {
         </figure>
       );
     },
-    // 2. Опросы
     strawpoll: ({ value }: any) => {
       if (!value?.url) return null;
       return (
@@ -89,21 +97,15 @@ const ptComponents = {
         </div>
       );
     },
-    // 3. НОВОЕ: Секция Фото + Текст
     splitImage: ({ value }: any) => {
       if (!value?.image?.asset?._ref) return null;
-      
-      // Определяем настройки макета
       const layout = value.layout || 'left-half';
       const isRight = layout.includes('right');
       const isSmall = layout.includes('third');
-      
-      // Классы ширины
       const imageWidthClass = isSmall ? 'lg:w-1/3' : 'lg:w-1/2';
       
       return (
         <div className={`my-12 flex flex-col lg:flex-row gap-8 items-start ${isRight ? 'lg:flex-row-reverse' : ''}`}>
-          {/* Блок Картинки */}
           <div className={`w-full ${imageWidthClass} flex-shrink-0`}>
              <img
               src={urlFor(value.image).width(800).url()}
@@ -111,10 +113,7 @@ const ptComponents = {
               className="rounded-lg shadow-xl border border-white/10 w-full h-auto object-cover"
             />
           </div>
-          
-          {/* Блок Текста */}
           <div className="flex-1 min-w-0">
-             {/* Рендерим вложенный текст рекурсивно */}
              <PortableText value={value.text} /> 
           </div>
         </div>
@@ -127,18 +126,45 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<CategoryId>('all');
   const [activePostId, setActivePostId] = useState<string | null>(null);
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(themes.all);
+  
+  // Состояния для данных
   const [posts, setPosts] = useState<Post[]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]); // Состояние для глав
   const [loading, setLoading] = useState(true);
 
+  // Ссылка на бусти
+  const BOOSTY_LINK = "https://boosty.to/parallel-game";
+
   useEffect(() => {
-    const fetchPosts = async () => {
+    const fetchData = async () => {
       try {
-        const query = `*[_type == "post"] | order(publishedAt desc)`;
-        const data = await client.fetch(query);
-        setPosts(data);
-      } catch (error) { console.error("Err:", error); } finally { setLoading(false); }
+        setLoading(true);
+        // 1. Загружаем посты
+        const postsQuery = `*[_type == "post"] | order(publishedAt desc)`;
+        // 2. Загружаем главы книг
+        const chaptersQuery = `*[_type == "chapter"] | order(chapterNumber asc) {
+          _id,
+          title,
+          chapterNumber,
+          slug,
+          "coverUrl": cover.asset->url
+        }`;
+
+        // Выполняем оба запроса параллельно
+        const [postsData, chaptersData] = await Promise.all([
+          client.fetch(postsQuery),
+          client.fetch(chaptersQuery)
+        ]);
+
+        setPosts(postsData);
+        setChapters(chaptersData);
+      } catch (error) { 
+        console.error("Err:", error); 
+      } finally { 
+        setLoading(false); 
+      }
     };
-    fetchPosts();
+    fetchData();
   }, []);
 
   useEffect(() => { setCurrentTheme(themes[activeCategory]); }, [activeCategory]);
@@ -159,6 +185,7 @@ export default function Home() {
 
   return (
     <div className="flex h-screen overflow-hidden font-sans transition-colors duration-500" style={{ ...getThemeVariables(), backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)' }}>
+      {/* SIDEBAR */}
       <aside className="fixed bottom-0 w-full md:relative md:w-72 md:h-full z-50 flex md:flex-col justify-between shadow-2xl backdrop-blur-md border-t md:border-t-0 md:border-r transition-colors duration-500" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>
         <div className="hidden md:flex flex-col p-8 border-b relative overflow-hidden transition-colors duration-500" style={{ borderColor: 'var(--card-border)' }}>
           <h1 className="text-3xl font-extrabold tracking-tighter uppercase leading-none text-white z-10">ПАРАЛЛЕЛЬ</h1>
@@ -182,50 +209,117 @@ export default function Home() {
            </div>
         </div>
       </aside>
+
+      {/* MAIN */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative transition-all duration-700" style={{ backgroundImage: currentTheme.bgImage }}>
         <header className="md:hidden flex items-center justify-between px-4 py-4 border-b z-40" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}><h1 className="font-extrabold text-white text-lg tracking-tight uppercase">ПАРАЛЛЕЛЬ</h1><button className="p-2 opacity-50 hover:opacity-100"><Menu className="w-6 h-6 text-white" /></button></header>
         <div className="flex-1 overflow-y-auto p-4 md:p-12 pb-24 md:pb-12 scroll-smooth z-10 relative">
+          
           {activePost ? (
-            <div className="max-w-3xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
-              <div className="flex justify-between items-center mb-8">
+             <div className="max-w-3xl mx-auto animate-in slide-in-from-bottom-4 duration-500">
+               <div className="flex justify-between items-center mb-8">
                  <button onClick={() => setActivePostId(null)} className="flex items-center gap-2 text-xs font-mono uppercase opacity-50 hover:opacity-100 transition-colors" style={{ color: 'var(--accent-color)' }}><ArrowLeft className="w-4 h-4" /> Return</button>
                  <a href={`/studio/structure/post;${activePost._id}`} target="_blank" className="flex items-center gap-2 text-xs font-mono uppercase opacity-30 hover:opacity-100 transition-colors"><span className="hidden md:inline">Edit</span><ExternalLink className="w-3 h-3" /></a>
-              </div>
-              {activePost.isPremium ? (
-                <div className="max-w-2xl mx-auto pt-10 text-center">
-                  <div className="inline-block p-6 rounded-full border-2 mb-8 bg-white/5" style={{ borderColor: 'var(--card-border)' }}><Lock className="w-10 h-10" style={{ color: 'var(--accent-color)' }} /></div>
-                  <h2 className="text-3xl font-bold text-white mb-4 uppercase tracking-wider">Доступ Запрещен</h2>
-                  <p className="text-sm font-mono opacity-60 mb-10 max-w-md mx-auto">Данные зашифрованы.</p>
-                  <a href="https://boosty.to/YOUR_PAGE" target="_blank" rel="noopener noreferrer" className="inline-block border px-8 py-4 text-white font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>Купить Ключ</a>
-                </div>
-              ) : (
-                <article className="relative">
-                   <header className="mb-10 pb-8 border-b border-dashed" style={{ borderColor: 'var(--card-border)' }}><h1 className="text-3xl lg:text-5xl font-bold text-white mb-4">{activePost.title}</h1><div className="flex gap-4 text-xs font-mono opacity-60"><span>{formatDate(activePost.publishedAt)}</span><span>CAT: {activePost.category?.toUpperCase() || 'GENERAL'}</span></div></header>
-                   <div className="prose max-w-none prose-invert prose-p:leading-relaxed prose-headings:text-white prose-a:text-blue-400 prose-img:rounded-xl">
-                      <PortableText value={activePost.content} components={ptComponents} />
-                   </div>
-                   {activePost.allowComments && (
-                     <div className="mt-16 pt-10 border-t border-dashed" style={{ borderColor: 'var(--card-border)' }}>
-                       <div className="flex items-center gap-2 mb-6 opacity-60"><MessageSquare className="w-4 h-4" /><span className="text-xs font-mono uppercase tracking-widest">Secure Comms Channel</span></div>
-                       <Giscus id="comments" repo="staerput-creator/parallel-app" repoId="R_kgDONR2d_A" category="Announcements" categoryId="DIC_kwDONR2d_M4Ckce_" mapping="pathname" term="Welcome to Parallel" reactionsEnabled="1" emitMetadata="0" inputPosition="top" theme="transparent_dark" lang="ru" loading="lazy" />
-                     </div>
-                   )}
-                </article>
-              )}
-            </div>
+               </div>
+               
+               {activePost.isPremium ? (
+                 <div className="max-w-2xl mx-auto pt-10 text-center">
+                   <div className="inline-block p-6 rounded-full border-2 mb-8 bg-white/5" style={{ borderColor: 'var(--card-border)' }}><Lock className="w-10 h-10" style={{ color: 'var(--accent-color)' }} /></div>
+                   <h2 className="text-3xl font-bold text-white mb-4 uppercase tracking-wider">Доступ Запрещен</h2>
+                   <p className="text-sm font-mono opacity-60 mb-10 max-w-md mx-auto">Данные зашифрованы.</p>
+                   <a href="https://boosty.to/YOUR_PAGE" target="_blank" rel="noopener noreferrer" className="inline-block border px-8 py-4 text-white font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-all" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>Купить Ключ</a>
+                 </div>
+               ) : (
+                 <article className="relative">
+                    <header className="mb-10 pb-8 border-b border-dashed" style={{ borderColor: 'var(--card-border)' }}><h1 className="text-3xl lg:text-5xl font-bold text-white mb-4">{activePost.title}</h1><div className="flex gap-4 text-xs font-mono opacity-60"><span>{formatDate(activePost.publishedAt)}</span><span>CAT: {activePost.category?.toUpperCase() || 'GENERAL'}</span></div></header>
+                    <div className="prose max-w-none prose-invert prose-p:leading-relaxed prose-headings:text-white prose-a:text-blue-400 prose-img:rounded-xl">
+                       <PortableText value={activePost.content} components={ptComponents} />
+                    </div>
+                    {activePost.allowComments && (
+                      <div className="mt-16 pt-10 border-t border-dashed" style={{ borderColor: 'var(--card-border)' }}>
+                        <div className="flex items-center gap-2 mb-6 opacity-60"><MessageSquare className="w-4 h-4" /><span className="text-xs font-mono uppercase tracking-widest">Secure Comms Channel</span></div>
+                        <Giscus id="comments" repo="staerput-creator/parallel-app" repoId="R_kgDONR2d_A" category="Announcements" categoryId="DIC_kwDONR2d_M4Ckce_" mapping="pathname" term="Welcome to Parallel" reactionsEnabled="1" emitMetadata="0" inputPosition="top" theme="transparent_dark" lang="ru" loading="lazy" />
+                      </div>
+                    )}
+                 </article>
+               )}
+             </div>
           ) : (
             <>
-              <div className="mb-12 animate-in fade-in duration-500"><div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-color)' }}></span><span className="text-xs font-mono opacity-70 uppercase tracking-widest" style={{ color: 'var(--accent-color)' }}>System Online</span></div><h2 className="text-4xl lg:text-5xl font-extrabold text-white uppercase tracking-tighter">{categories.find(c => c.id === activeCategory)?.label}</h2></div>
-              {posts.filter(p => activeCategory === 'all' || p.category === activeCategory).length === 0 ? (
-                  <div className="p-10 border border-dashed text-center opacity-50 font-mono text-sm" style={{ borderColor: 'var(--card-border)' }}>NO DATA FOUND</div>
+              <div className="mb-12 animate-in fade-in duration-500">
+                <div className="flex items-center gap-2 mb-2"><span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-color)' }}></span><span className="text-xs font-mono opacity-70 uppercase tracking-widest" style={{ color: 'var(--accent-color)' }}>System Online</span></div>
+                <h2 className="text-4xl lg:text-5xl font-extrabold text-white uppercase tracking-tighter">{categories.find(c => c.id === activeCategory)?.label}</h2>
+              </div>
+
+              {/* --- ЛОГИКА ОТОБРАЖЕНИЯ (КНИГА vs ПОСТЫ) --- */}
+              {activeCategory === 'premium' ? (
+                // --- РЕЖИМ КНИГИ ---
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+                  {chapters.length === 0 && <div className="col-span-full p-10 border border-dashed text-center opacity-50 font-mono text-sm" style={{ borderColor: 'var(--card-border)' }}>NO CHAPTERS FOUND</div>}
+                  
+                  {chapters.map((chapter) => {
+                    const isFree = chapter.chapterNumber <= 2;
+                    const linkUrl = isFree ? `/read/${chapter.slug.current}` : BOOSTY_LINK;
+                    const target = isFree ? '_self' : '_blank';
+
+                    return (
+                      <Link href={linkUrl} key={chapter._id} target={target}
+                        className="group relative bg-[#111] border border-[#222] rounded-xl overflow-hidden hover:border-red-500/50 transition-all hover:-translate-y-1 h-[400px] flex flex-col">
+                        
+                        {/* Обложка */}
+                        <div className="h-2/3 bg-[#222] relative overflow-hidden">
+                          {chapter.coverUrl ? (
+                            <img src={chapter.coverUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt="" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center bg-red-900/20 group-hover:bg-red-900/30 transition-colors">
+                              <BookOpen className="w-12 h-12 text-red-500 opacity-50" />
+                            </div>
+                          )}
+                          
+                          {/* Бейджик */}
+                          <div className="absolute top-4 right-4">
+                            {!isFree ? (
+                              <div className="bg-black/80 backdrop-blur text-yellow-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 border border-yellow-500/30">
+                                <Lock className="w-3 h-3" /> PREMIUM
+                              </div>
+                            ) : (
+                              <div className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-bold border border-green-500/30">FREE</div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Информация */}
+                        <div className="p-6 flex-1 flex flex-col">
+                          <div className="text-xs font-mono text-gray-500 mb-2">CHAPTER {chapter.chapterNumber.toString().padStart(2, '0')}</div>
+                          <h3 className="text-xl font-bold mb-2 group-hover:text-red-500 transition-colors line-clamp-2">{chapter.title}</h3>
+                          
+                          <div className="mt-auto flex items-center text-sm font-bold text-gray-400 group-hover:text-white transition-colors">
+                            {isFree ? (
+                              <><Play className="w-4 h-4 mr-2 fill-current" /> ЧИТАТЬ</>
+                            ) : (
+                              <>ПОДПИСАТЬСЯ <ExternalLink className="w-4 h-4 ml-2" /></>
+                            )}
+                          </div>
+                        </div>
+                      </Link>
+                    )
+                  })}
+                </div>
               ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {posts.filter(p => activeCategory === 'all' || p.category === activeCategory).map((post, idx) => (
-                      <article key={post._id} onClick={() => setActivePostId(post._id)} className="relative flex flex-col h-full border opacity-80 hover:opacity-100 transition-all duration-300 cursor-pointer group overflow-hidden animate-in slide-in-from-bottom-4 fill-mode-forwards" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)', animationDelay: `${idx * 100}ms` }}>
-                        <div className="p-6 flex flex-col h-full relative z-10"><div className="flex justify-between items-start mb-4"><span className="text-[9px] font-mono uppercase border px-2 py-1" style={{ borderColor: 'var(--card-border)', color: 'var(--accent-color)' }}>{post.label || 'INFO'}</span>{post.isPremium && <Lock className="w-3 h-3" style={{ color: 'var(--accent-color)' }} />}</div><h3 className="text-xl font-bold text-white mb-3 leading-tight group-hover:text-blue-400 transition-colors" style={{ color: 'var(--text-primary)' }}>{post.title}</h3><div className="mt-auto pt-4 border-t border-dashed flex justify-between items-center text-[10px] opacity-60 font-mono uppercase" style={{ borderColor: 'var(--card-border)' }}><span>{formatDate(post.publishedAt)}</span><span className="group-hover:translate-x-1 transition-transform">{">>>"}</span></div></div>
-                      </article>
-                    ))}
-                  </div>
+                // --- РЕЖИМ ПОСТОВ (Сводка, Девблог, Лор) ---
+                <>
+                  {posts.filter(p => activeCategory === 'all' || p.category === activeCategory).length === 0 ? (
+                      <div className="p-10 border border-dashed text-center opacity-50 font-mono text-sm" style={{ borderColor: 'var(--card-border)' }}>NO DATA FOUND</div>
+                  ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {posts.filter(p => activeCategory === 'all' || p.category === activeCategory).map((post, idx) => (
+                          <article key={post._id} onClick={() => setActivePostId(post._id)} className="relative flex flex-col h-full border opacity-80 hover:opacity-100 transition-all duration-300 cursor-pointer group overflow-hidden animate-in slide-in-from-bottom-4 fill-mode-forwards" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)', animationDelay: `${idx * 100}ms` }}>
+                            <div className="p-6 flex flex-col h-full relative z-10"><div className="flex justify-between items-start mb-4"><span className="text-[9px] font-mono uppercase border px-2 py-1" style={{ borderColor: 'var(--card-border)', color: 'var(--accent-color)' }}>{post.label || 'INFO'}</span>{post.isPremium && <Lock className="w-3 h-3" style={{ color: 'var(--accent-color)' }} />}</div><h3 className="text-xl font-bold text-white mb-3 leading-tight group-hover:text-blue-400 transition-colors" style={{ color: 'var(--text-primary)' }}>{post.title}</h3><div className="mt-auto pt-4 border-t border-dashed flex justify-between items-center text-[10px] opacity-60 font-mono uppercase" style={{ borderColor: 'var(--card-border)' }}><span>{formatDate(post.publishedAt)}</span><span className="group-hover:translate-x-1 transition-transform">{">>>"}</span></div></div>
+                          </article>
+                        ))}
+                      </div>
+                  )}
+                </>
               )}
             </>
           )}
