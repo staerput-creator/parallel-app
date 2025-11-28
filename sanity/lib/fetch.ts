@@ -13,10 +13,13 @@ export async function sanityFetch<QueryResponse>({
   params?: any
   tags?: string[]
 }) {
-  const isDraftMode = draftMode().isEnabled
+  // --- ФИКС ДЛЯ Next.js 15 ---
+  // draftMode() теперь возвращает Promise, поэтому нужно await
+  const draft = await draftMode() 
+  const isDraftMode = draft.isEnabled
 
   if (isDraftMode && !token) {
-    throw new Error('Missing SANITY_VIEWER_TOKEN')
+    throw new Error('Отсутствует токен SANITY_VIEWER_TOKEN')
   }
 
   // Если режим черновика включен - используем токен и не кешируем
