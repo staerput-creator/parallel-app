@@ -2,8 +2,13 @@
 
 import React, { useRef, useEffect, forwardRef } from 'react';
 // @ts-ignore
-import HTMLFlipBook from 'react-pageflip';
+import HTMLFlipBookRaw from 'react-pageflip';
 import { PortableText } from '@portabletext/react';
+
+// --- ФИКС ОШИБКИ TYPESCRIPT ---
+// Мы принудительно говорим, что этот компонент может принимать ЛЮБЫЕ пропсы.
+// Это снимет красное подчеркивание навсегда.
+const HTMLFlipBook = HTMLFlipBookRaw as any;
 
 // Звук перелистывания
 const FLIP_SOUND = '/sounds/page-flip.mp3';
@@ -43,7 +48,6 @@ export default function BookReader({ chapter }: { chapter: any }) {
   const flipAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    // Инициализируем аудио только на клиенте
     if (typeof window !== 'undefined') {
         flipAudioRef.current = new Audio(FLIP_SOUND);
         flipAudioRef.current.volume = 0.5;
@@ -59,17 +63,14 @@ export default function BookReader({ chapter }: { chapter: any }) {
 
     // 2. Логика звука страниц
     const bookPageIndex = e.data;
-    const dataIndex = bookPageIndex - 1; // Смещаем индекс (0 - обложка)
+    const dataIndex = bookPageIndex - 1; 
 
-    // Останавливаем старый звук
     if (audioRef.current) {
         audioRef.current.pause();
     }
 
-    // Если это обложка (индекс < 0) — выходим
     if (dataIndex < 0) return;
 
-    // Берем данные текущей страницы
     const pageData = chapter.pages ? chapter.pages[dataIndex] : null;
 
     if (pageData?.soundUrl) {
@@ -83,6 +84,7 @@ export default function BookReader({ chapter }: { chapter: any }) {
   return (
     <div className="flex justify-center items-center h-screen bg-[#1a1a1a] py-10">
       
+      {/* Теперь HTMLFlipBook имеет тип any, и красного подчеркивания не будет */}
       <HTMLFlipBook
         width={400}
         height={600}
@@ -97,7 +99,6 @@ export default function BookReader({ chapter }: { chapter: any }) {
         onFlip={onFlip}
         ref={bookRef}
         className="shadow-2xl"
-        // УДАЛИЛ style={{}} ОТСЮДА
         startPage={0}
         drawShadow={true}
         flippingTime={1000}
@@ -110,7 +111,7 @@ export default function BookReader({ chapter }: { chapter: any }) {
         showPageCorners={true}
         disableFlipByClick={false}
       >
-        {/* ОБЛОЖКА (Страница 0) */}
+        {/* ОБЛОЖКА */}
         <div className="page-cover bg-[#2a2a2a] text-white shadow-2xl overflow-hidden cursor-pointer">
             {chapter.coverUrl ? (
                 <img 
