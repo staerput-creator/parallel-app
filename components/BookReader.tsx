@@ -19,7 +19,7 @@ const Page = forwardRef((props: any, ref: any) => {
       <div className="relative z-10 h-full flex flex-col">
         <div className="text-center text-gray-400 text-xs mb-4 font-mono">- {props.number} -</div>
 
-        {/* ИСПРАВЛЕНИЕ 1: Проверяем imageUrl, а не image */}
+        {/* Проверяем imageUrl */}
         {props.data.imageUrl && (
            <div className="mb-6 rounded-lg overflow-hidden border-4 border-double border-black/20 sepia-[.3]">
              <img src={props.data.imageUrl} className="w-full h-auto object-cover" alt="" />
@@ -43,8 +43,11 @@ export default function BookReader({ chapter }: { chapter: any }) {
   const flipAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    flipAudioRef.current = new Audio(FLIP_SOUND);
-    flipAudioRef.current.volume = 0.5;
+    // Инициализируем аудио только на клиенте
+    if (typeof window !== 'undefined') {
+        flipAudioRef.current = new Audio(FLIP_SOUND);
+        flipAudioRef.current.volume = 0.5;
+    }
   }, []);
 
   const onFlip = (e: any) => {
@@ -54,21 +57,20 @@ export default function BookReader({ chapter }: { chapter: any }) {
       flipAudioRef.current.play().catch(() => {});
     }
 
-    // 2. ИСПРАВЛЕНИЕ 2: Логика звука страниц
-    // Индекс 0 = Обложка. Индекс 1 = Первая страница данных.
+    // 2. Логика звука страниц
     const bookPageIndex = e.data;
-    const dataIndex = bookPageIndex - 1; // Смещаем индекс
+    const dataIndex = bookPageIndex - 1; // Смещаем индекс (0 - обложка)
 
     // Останавливаем старый звук
     if (audioRef.current) {
         audioRef.current.pause();
     }
 
-    // Если это обложка (индекс < 0) — выходим, ничего не играем
+    // Если это обложка (индекс < 0) — выходим
     if (dataIndex < 0) return;
 
     // Берем данные текущей страницы
-    const pageData = chapter.pages[dataIndex];
+    const pageData = chapter.pages ? chapter.pages[dataIndex] : null;
 
     if (pageData?.soundUrl) {
       const audio = new Audio(pageData.soundUrl);
@@ -95,6 +97,7 @@ export default function BookReader({ chapter }: { chapter: any }) {
         onFlip={onFlip}
         ref={bookRef}
         className="shadow-2xl"
+        // УДАЛИЛ style={{}} ОТСЮДА
         startPage={0}
         drawShadow={true}
         flippingTime={1000}
@@ -110,14 +113,12 @@ export default function BookReader({ chapter }: { chapter: any }) {
         {/* ОБЛОЖКА (Страница 0) */}
         <div className="page-cover bg-[#2a2a2a] text-white shadow-2xl overflow-hidden cursor-pointer">
             {chapter.coverUrl ? (
-                // Если в админке есть обложка - показываем её
                 <img 
                     src={chapter.coverUrl} 
                     alt="Book Cover" 
                     className="w-full h-full object-cover" 
                 />
             ) : (
-                // Если обложки нет - показываем стандартную красную папку
                 <div className="h-full w-full bg-red-900 p-10 flex flex-col items-center justify-center border-[10px] border-double border-yellow-600/50">
                     <h1 className="text-4xl font-bold uppercase text-center mb-4 tracking-widest text-yellow-500 drop-shadow-md">{chapter.title}</h1>
                     <p className="text-xs font-mono opacity-50 tracking-[0.3em]">TOP SECRET // CLASSIFIED</p>
@@ -125,7 +126,7 @@ export default function BookReader({ chapter }: { chapter: any }) {
             )}
         </div>
 
-        {/* СТРАНИЦЫ (Начинаются с индекса 1) */}
+        {/* СТРАНИЦЫ */}
         {chapter.pages?.map((page: any, index: number) => (
           <Page key={index} number={index + 1} data={page} />
         ))}
