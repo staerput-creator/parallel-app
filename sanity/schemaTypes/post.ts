@@ -106,6 +106,9 @@ export default defineType({
         },
         // 3. ОПРОС
         { type: 'strawpoll' },
+        { type: 'youtube' },
+        { type: 'vkvideo' },
+        { type: 'rutube' },  
         
         // 4. НОВОЕ: СЕКЦИЯ "ФОТО + ТЕКСТ" (Твой чертеж)
         {

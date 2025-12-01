@@ -1,10 +1,11 @@
 import { type SchemaTypeDefinition } from 'sanity'
 import post from './post'
 import chapter from './chapter'
-// Если у тебя есть файл strawpoll.ts, раскомментируй импорт ниже:
 import strawpoll from './strawpoll' 
+import youtube from './youtube'
+import vkvideo from './vkvideo' // <-- 1
+import rutube from './rutube'   // <-- 2
 
 export const schema: { types: SchemaTypeDefinition[] } = {
-  // Добавляем strawpoll в список, чтобы post.ts не ругался
-  types: [post, chapter, strawpoll], 
+  types: [post, chapter, strawpoll, youtube, vkvideo, rutube], // <-- Добавь в список
 }

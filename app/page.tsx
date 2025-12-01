@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Activity, Cpu, FileText, BookOpen, User, Menu, Lock, ArrowLeft, 
-  MessageSquare, Edit, ExternalLink, BarChart3, Play 
+  MessageSquare, Edit, ExternalLink, BarChart3, Play, KeyRound, Youtube 
 } from 'lucide-react';
 import { client } from '@/sanity/client'; 
 import { PortableText } from '@portabletext/react'; 
@@ -17,13 +17,37 @@ function urlFor(source: any) {
   return builder.image(source);
 }
 
-// --- Helper: Polls ---
+// --- Helper: Polls & Videos (Из Кода 2) ---
 const getEmbedUrl = (url: string) => {
   try {
     if (!url) return '';
     const pollId = url.split('/').pop();
     return `https://strawpoll.com/embed/${pollId}`;
   } catch (e) { return ''; }
+};
+
+const getYoutubeId = (url: string) => {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+};
+
+const getRutubeId = (url: string) => {
+  if (!url) return null;
+  const parts = url.split('/');
+  return parts[parts.length - 1] || parts[parts.length - 2];
+};
+
+const getVkEmbedUrl = (url: string) => {
+  if (!url) return null;
+  try {
+    const match = url.match(/video(-?\d+)_(\d+)/);
+    if (match) {
+      return `https://vk.com/video_ext.php?oid=${match[1]}&id=${match[2]}&hd=2`;
+    }
+    return null;
+  } catch { return null; }
 };
 
 // --- Types ---
@@ -40,7 +64,6 @@ interface Post {
   content: any;
 }
 
-// Добавляем тип для Главы
 interface Chapter {
   _id: string;
   title: string;
@@ -70,10 +93,13 @@ const themes: Record<CategoryId, ThemeConfig> = {
   premium: { className: 'theme-premium', subtitle: 'Restricted Area', bgImage: 'radial-gradient(circle at bottom right, #e11d4820 0%, transparent 60%)' },
 };
 
-// --- PORTABLE TEXT COMPONENTS ---
+// --- PORTABLE TEXT COMPONENTS (Собранная версия: Фото + Видео) ---
 const ptComponents = {
   types: {
+    // 1. Изображения (Логика Кода 1 - требует наличие _ref)
     image: ({ value }: any) => {
+      // Здесь была проблема. Если в запросе делать asset->, то _ref исчезает.
+      // Мы вернули простой запрос, поэтому проверка на _ref корректна.
       if (!value?.asset?._ref) return null;
       return (
         <figure className="my-8 group">
@@ -118,6 +144,44 @@ const ptComponents = {
           </div>
         </div>
       );
+    },
+    
+    // 2. Видео (Логика из Кода 2)
+    youtube: ({ value }: any) => {
+      const id = getYoutubeId(value.url);
+      if (!id) return <div className="text-red-500 text-xs p-4 border border-red-500/50 rounded">Ошибка YouTube: {value.url}</div>;
+      return (
+        <div className="my-10 rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-black aspect-video relative z-10">
+           <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${id}`} title="YouTube" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
+        </div>
+      );
+    },
+    rutube: ({ value }: any) => {
+      const id = getRutubeId(value.url);
+      if (!id) return <div className="text-red-500 text-xs p-4 border border-red-500/50 rounded">Ошибка RuTube: {value.url}</div>;
+      return (
+        <div className="my-10 rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-black aspect-video relative z-10">
+           <iframe width="100%" height="100%" src={`https://rutube.ru/play/embed/${id}`} frameBorder="0" allow="clipboard-write; autoplay" allowFullScreen></iframe>
+        </div>
+      );
+    },
+    vkvideo: ({ value }: any) => {
+      const embedUrl = getVkEmbedUrl(value.url);
+      if (!embedUrl) return <div className="text-red-500 text-xs p-4 border border-red-500/50 rounded">Ошибка VK: {value.url}</div>;
+      return (
+        <div className="my-10 rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-black aspect-video relative z-10">
+           <iframe src={embedUrl} width="100%" height="100%" allow="autoplay; encrypted-media; fullscreen; picture-in-picture;" frameBorder="0" allowFullScreen></iframe>
+        </div>
+      );
+    },
+    
+    // Отладочный блок
+    unknownType: ({ value }: any) => {
+      return (
+        <div className="my-4 p-4 border-2 border-yellow-500 bg-yellow-500/20 text-yellow-200 font-mono text-sm rounded">
+          ⚠️ НЕИЗВЕСТНЫЙ БЛОК: <strong>{value._type}</strong>
+        </div>
+      )
     }
   }
 };
@@ -127,9 +191,8 @@ export default function Home() {
   const [activePostId, setActivePostId] = useState<string | null>(null);
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(themes.all);
   
-  // Состояния для данных
   const [posts, setPosts] = useState<Post[]>([]);
-  const [chapters, setChapters] = useState<Chapter[]>([]); // Состояние для глав
+  const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Ссылка на бусти
@@ -139,9 +202,14 @@ export default function Home() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // 1. Загружаем посты
+        
+        // --- CRITICAL FIX ---
+        // Использование простого запроса из КОДА 1.
+        // Это позволяет получать картинки как объекты с `_ref`, 
+        // что необходимо для imageUrlBuilder и проверок в компонентах.
+        // Видео (youtube и т.д.) всё равно придут, так как они часть контента.
         const postsQuery = `*[_type == "post"] | order(publishedAt desc)`;
-        // 2. Загружаем главы книг
+
         const chaptersQuery = `*[_type == "chapter"] | order(chapterNumber asc) {
           _id,
           title,
@@ -150,7 +218,6 @@ export default function Home() {
           "coverUrl": cover.asset->url
         }`;
 
-        // Выполняем оба запроса параллельно
         const [postsData, chaptersData] = await Promise.all([
           client.fetch(postsQuery),
           client.fetch(chaptersQuery)
@@ -188,7 +255,7 @@ export default function Home() {
       {/* SIDEBAR */}
       <aside className="fixed bottom-0 w-full md:relative md:w-72 md:h-full z-50 flex md:flex-col justify-between shadow-2xl backdrop-blur-md border-t md:border-t-0 md:border-r transition-colors duration-500" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>
         <div className="hidden md:flex flex-col p-8 border-b relative overflow-hidden transition-colors duration-500" style={{ borderColor: 'var(--card-border)' }}>
-          <h1 className="text-3xl font-extrabold tracking-tighter uppercase leading-none text-white z-10">ПАРАЛЛЕЛЬ</h1>
+          <h1 className="text-3xl font-extrabold tracking-tighter uppercase leading-none text-white z-10">ПАРАЛЛЕЛЬ v2.0</h1>
           <p className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 opacity-70 transition-all duration-500" style={{ color: 'var(--accent-color)' }}>{currentTheme.subtitle}</p>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 py-2 md:py-8 flex md:flex-col justify-around md:justify-start w-full md:space-y-3">
@@ -265,8 +332,6 @@ export default function Home() {
                     return (
                       <Link href={linkUrl} key={chapter._id} target={target}
                         className="group relative bg-[#111] border border-[#222] rounded-xl overflow-hidden hover:border-red-500/50 transition-all hover:-translate-y-1 h-[400px] flex flex-col">
-                        
-                        {/* Обложка */}
                         <div className="h-2/3 bg-[#222] relative overflow-hidden">
                           {chapter.coverUrl ? (
                             <img src={chapter.coverUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt="" />
@@ -275,8 +340,6 @@ export default function Home() {
                               <BookOpen className="w-12 h-12 text-red-500 opacity-50" />
                             </div>
                           )}
-                          
-                          {/* Бейджик */}
                           <div className="absolute top-4 right-4">
                             {!isFree ? (
                               <div className="bg-black/80 backdrop-blur text-yellow-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 border border-yellow-500/30">
@@ -287,17 +350,14 @@ export default function Home() {
                             )}
                           </div>
                         </div>
-
-                        {/* Информация */}
                         <div className="p-6 flex-1 flex flex-col">
                           <div className="text-xs font-mono text-gray-500 mb-2">CHAPTER {chapter.chapterNumber.toString().padStart(2, '0')}</div>
                           <h3 className="text-xl font-bold mb-2 group-hover:text-red-500 transition-colors line-clamp-2">{chapter.title}</h3>
-                          
                           <div className="mt-auto flex items-center text-sm font-bold text-gray-400 group-hover:text-white transition-colors">
                             {isFree ? (
                               <><Play className="w-4 h-4 mr-2 fill-current" /> ЧИТАТЬ</>
                             ) : (
-                              <>ПОДПИСАТЬСЯ <ExternalLink className="w-4 h-4 ml-2" /></>
+                              <><KeyRound className="w-4 h-4 mr-2" /> ВВЕСТИ КОД</>
                             )}
                           </div>
                         </div>
@@ -307,19 +367,13 @@ export default function Home() {
                 </div>
               ) : (
                 // --- РЕЖИМ ПОСТОВ (Сводка, Девблог, Лор) ---
-                <>
-                  {posts.filter(p => activeCategory === 'all' || p.category === activeCategory).length === 0 ? (
-                      <div className="p-10 border border-dashed text-center opacity-50 font-mono text-sm" style={{ borderColor: 'var(--card-border)' }}>NO DATA FOUND</div>
-                  ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {posts.filter(p => activeCategory === 'all' || p.category === activeCategory).map((post, idx) => (
-                          <article key={post._id} onClick={() => setActivePostId(post._id)} className="relative flex flex-col h-full border opacity-80 hover:opacity-100 transition-all duration-300 cursor-pointer group overflow-hidden animate-in slide-in-from-bottom-4 fill-mode-forwards" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)', animationDelay: `${idx * 100}ms` }}>
-                            <div className="p-6 flex flex-col h-full relative z-10"><div className="flex justify-between items-start mb-4"><span className="text-[9px] font-mono uppercase border px-2 py-1" style={{ borderColor: 'var(--card-border)', color: 'var(--accent-color)' }}>{post.label || 'INFO'}</span>{post.isPremium && <Lock className="w-3 h-3" style={{ color: 'var(--accent-color)' }} />}</div><h3 className="text-xl font-bold text-white mb-3 leading-tight group-hover:text-blue-400 transition-colors" style={{ color: 'var(--text-primary)' }}>{post.title}</h3><div className="mt-auto pt-4 border-t border-dashed flex justify-between items-center text-[10px] opacity-60 font-mono uppercase" style={{ borderColor: 'var(--card-border)' }}><span>{formatDate(post.publishedAt)}</span><span className="group-hover:translate-x-1 transition-transform">{">>>"}</span></div></div>
-                          </article>
-                        ))}
-                      </div>
-                  )}
-                </>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {posts.filter(p => activeCategory === 'all' || p.category === activeCategory).map((post) => (
+                    <article key={post._id} onClick={() => setActivePostId(post._id)} className="relative flex flex-col h-full border opacity-80 hover:opacity-100 transition-all duration-300 cursor-pointer group overflow-hidden animate-in slide-in-from-bottom-4 fill-mode-forwards" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)', animationDelay: `${100}ms` }}>
+                      <div className="p-6 flex flex-col h-full relative z-10"><div className="flex justify-between items-start mb-4"><span className="text-[9px] font-mono uppercase border px-2 py-1" style={{ borderColor: 'var(--card-border)', color: 'var(--accent-color)' }}>{post.label || 'INFO'}</span>{post.isPremium && <Lock className="w-3 h-3" style={{ color: 'var(--accent-color)' }} />}</div><h3 className="text-xl font-bold text-white mb-3 leading-tight group-hover:text-blue-400 transition-colors" style={{ color: 'var(--text-primary)' }}>{post.title}</h3><div className="mt-auto pt-4 border-t border-dashed flex justify-between items-center text-[10px] opacity-60 font-mono uppercase" style={{ borderColor: 'var(--card-border)' }}><span>{formatDate(post.publishedAt)}</span><span className="group-hover:translate-x-1 transition-transform">{">>>"}</span></div></div>
+                    </article>
+                  ))}
+                </div>
               )}
             </>
           )}
