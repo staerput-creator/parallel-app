@@ -3,13 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Activity, Cpu, FileText, BookOpen, User, Menu, Lock, ArrowLeft, 
-  MessageSquare, Edit, ExternalLink, BarChart3, Play, KeyRound, Youtube 
+  MessageSquare, Edit, ExternalLink, BarChart3, Play, KeyRound, Youtube, X 
 } from 'lucide-react';
 import { client } from '@/sanity/client'; 
 import { PortableText } from '@portabletext/react'; 
 import imageUrlBuilder from '@sanity/image-url'; 
 import Giscus from '@giscus/react'; 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 // --- Image Builder ---
 const builder = imageUrlBuilder(client);
@@ -17,7 +18,7 @@ function urlFor(source: any) {
   return builder.image(source);
 }
 
-// --- Helper: Polls & Videos (Из Кода 2) ---
+// --- Helper: Parsers ---
 const getEmbedUrl = (url: string) => {
   try {
     if (!url) return '';
@@ -64,12 +65,14 @@ interface Post {
   content: any;
 }
 
+// !!! ВАЖНО: Обновленный интерфейс Главы !!!
 interface Chapter {
   _id: string;
   title: string;
   chapterNumber: number;
   slug: { current: string };
   coverUrl: string;
+  accessCode?: string; // Поле из твоего файла chapter.ts
 }
 
 interface ThemeConfig {
@@ -93,13 +96,10 @@ const themes: Record<CategoryId, ThemeConfig> = {
   premium: { className: 'theme-premium', subtitle: 'Restricted Area', bgImage: 'radial-gradient(circle at bottom right, #e11d4820 0%, transparent 60%)' },
 };
 
-// --- PORTABLE TEXT COMPONENTS (Собранная версия: Фото + Видео) ---
+// --- PORTABLE TEXT COMPONENTS ---
 const ptComponents = {
   types: {
-    // 1. Изображения (Логика Кода 1 - требует наличие _ref)
     image: ({ value }: any) => {
-      // Здесь была проблема. Если в запросе делать asset->, то _ref исчезает.
-      // Мы вернули простой запрос, поэтому проверка на _ref корректна.
       if (!value?.asset?._ref) return null;
       return (
         <figure className="my-8 group">
@@ -145,8 +145,6 @@ const ptComponents = {
         </div>
       );
     },
-    
-    // 2. Видео (Логика из Кода 2)
     youtube: ({ value }: any) => {
       const id = getYoutubeId(value.url);
       if (!id) return <div className="text-red-500 text-xs p-4 border border-red-500/50 rounded">Ошибка YouTube: {value.url}</div>;
@@ -174,8 +172,6 @@ const ptComponents = {
         </div>
       );
     },
-    
-    // Отладочный блок
     unknownType: ({ value }: any) => {
       return (
         <div className="my-4 p-4 border-2 border-yellow-500 bg-yellow-500/20 text-yellow-200 font-mono text-sm rounded">
@@ -187,6 +183,7 @@ const ptComponents = {
 };
 
 export default function Home() {
+  const router = useRouter();
   const [activeCategory, setActiveCategory] = useState<CategoryId>('all');
   const [activePostId, setActivePostId] = useState<string | null>(null);
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(themes.all);
@@ -195,27 +192,29 @@ export default function Home() {
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Ссылка на бусти
+  // --- MODAL STATE ---
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
+  const [accessCode, setAccessCode] = useState('');
+  const [authError, setAuthError] = useState('');
+
   const BOOSTY_LINK = "https://boosty.to/parallel-game";
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        
-        // --- CRITICAL FIX ---
-        // Использование простого запроса из КОДА 1.
-        // Это позволяет получать картинки как объекты с `_ref`, 
-        // что необходимо для imageUrlBuilder и проверок в компонентах.
-        // Видео (youtube и т.д.) всё равно придут, так как они часть контента.
         const postsQuery = `*[_type == "post"] | order(publishedAt desc)`;
-
+        
+        // !!! ОБНОВЛЕНИЕ ЗДЕСЬ !!!
+        // Теперь мы запрашиваем 'accessCode', который определен в твоем chapter.ts
         const chaptersQuery = `*[_type == "chapter"] | order(chapterNumber asc) {
           _id,
           title,
           chapterNumber,
           slug,
-          "coverUrl": cover.asset->url
+          "coverUrl": cover.asset->url,
+          accessCode 
         }`;
 
         const [postsData, chaptersData] = await Promise.all([
@@ -248,14 +247,100 @@ export default function Home() {
     }
   };
 
+  // --- ЛОГИКА ОТКРЫТИЯ ОКНА ---
+  const handleChapterClick = (chapter: Chapter) => {
+    // Логика: Если accessCode в админке ПУСТОЙ, то доступ открыт.
+    // Если accessCode заполнен, требуем ввод пароля.
+    // (Или если это первые 2 главы - как запасное условие)
+    const isLocked = !!chapter.accessCode; // Если есть код - заперто
+
+    if (!isLocked) {
+        router.push(`/read/${chapter.slug.current}`);
+    } else {
+        setSelectedChapter(chapter);
+        setAccessCode('');
+        setAuthError('');
+        setIsAuthModalOpen(true);
+    }
+  };
+
+  // --- ЛОГИКА ПРОВЕРКИ КОДА (СВЕРКА С АДМИНКОЙ) ---
+  const handleCodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!selectedChapter || !selectedChapter.accessCode) return;
+
+    // Сравниваем введенный код с тем, что пришел из Sanity (CMS)
+    // .trim() убирает пробелы, .toLowerCase() делает регистр неважным (опционально)
+    if (accessCode.trim() === selectedChapter.accessCode) {
+       // УСПЕХ
+       setIsAuthModalOpen(false);
+       router.push(`/read/${selectedChapter.slug.current}?token=${accessCode}`);
+    } else {
+       // ОШИБКА
+       setAuthError('Неверный код доступа. Попробуйте снова.');
+    }
+  };
+
   if (loading) return <div className="h-screen w-full bg-[#0a0a0a] flex flex-col items-center justify-center text-white font-mono"><div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin mb-4"></div><p className="animate-pulse">SYSTEM BOOTING...</p></div>;
 
   return (
     <div className="flex h-screen overflow-hidden font-sans transition-colors duration-500" style={{ ...getThemeVariables(), backgroundColor: 'var(--bg-main)', color: 'var(--text-primary)' }}>
+      
+      {/* --- МОДАЛЬНОЕ ОКНО --- */}
+      {isAuthModalOpen && selectedChapter && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="bg-[#111] border border-white/10 rounded-2xl w-full max-w-md p-8 relative shadow-2xl mx-4">
+              <button 
+                onClick={() => setIsAuthModalOpen(false)} 
+                className="absolute top-4 right-4 text-white/50 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              
+              <div className="text-center mb-8">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-900/20 mb-4 border border-red-500/30">
+                   <Lock className="w-8 h-8 text-red-500" />
+                </div>
+                <h3 className="text-2xl font-bold text-white uppercase tracking-wider mb-2">Ограниченный доступ</h3>
+                <p className="text-sm font-mono text-gray-400">Эта глава защищена автором.<br/> Введите ключ доступа.</p>
+              </div>
+
+              <form onSubmit={handleCodeSubmit} className="space-y-6">
+                 <div className="space-y-2">
+                    <input 
+                      type="text" 
+                      value={accessCode}
+                      onChange={(e) => setAccessCode(e.target.value)}
+                      placeholder="ENTER_ACCESS_KEY" 
+                      className="w-full bg-black/50 border border-white/20 rounded-lg px-4 py-3 text-center text-white font-mono uppercase tracking-widest focus:outline-none focus:border-red-500 transition-colors"
+                      autoFocus
+                    />
+                    {authError && <p className="text-red-500 text-xs text-center font-mono animate-pulse">{authError}</p>}
+                 </div>
+
+                 <button 
+                    type="submit"
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg uppercase tracking-widest transition-all hover:shadow-[0_0_20px_rgba(220,38,38,0.5)]"
+                 >
+                    Разблокировать
+                 </button>
+              </form>
+              
+              <div className="mt-8 pt-6 border-t border-white/10 text-center">
+                 <p className="text-xs text-gray-500 mb-2">Где взять ключ?</p>
+                 <a href={BOOSTY_LINK} target="_blank" className="text-xs text-white/70 hover:text-white border-b border-white/30 hover:border-white transition-all pb-0.5 uppercase tracking-wide">
+                    Подпишись на Boosty
+                 </a>
+              </div>
+           </div>
+        </div>
+      )}
+
       {/* SIDEBAR */}
       <aside className="fixed bottom-0 w-full md:relative md:w-72 md:h-full z-50 flex md:flex-col justify-between shadow-2xl backdrop-blur-md border-t md:border-t-0 md:border-r transition-colors duration-500" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>
         <div className="hidden md:flex flex-col p-8 border-b relative overflow-hidden transition-colors duration-500" style={{ borderColor: 'var(--card-border)' }}>
-          <h1 className="text-3xl font-extrabold tracking-tighter uppercase leading-none text-white z-10">ПАРАЛЛЕЛЬ v2.0</h1>
+          <h1 className="text-3xl font-extrabold tracking-tighter uppercase leading-none text-white z-10">ПАРАЛЛЕЛЬ v2.1</h1>
           <p className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 opacity-70 transition-all duration-500" style={{ color: 'var(--accent-color)' }}>{currentTheme.subtitle}</p>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 py-2 md:py-8 flex md:flex-col justify-around md:justify-start w-full md:space-y-3">
@@ -325,13 +410,15 @@ export default function Home() {
                   {chapters.length === 0 && <div className="col-span-full p-10 border border-dashed text-center opacity-50 font-mono text-sm" style={{ borderColor: 'var(--card-border)' }}>NO CHAPTERS FOUND</div>}
                   
                   {chapters.map((chapter) => {
-                    const isFree = chapter.chapterNumber <= 2;
-                    const linkUrl = isFree ? `/read/${chapter.slug.current}` : BOOSTY_LINK;
-                    const target = isFree ? '_self' : '_blank';
+                    // ЕСЛИ в админке в поле 'accessCode' что-то написано, значит глава платная.
+                    const isLocked = !!chapter.accessCode;
 
                     return (
-                      <Link href={linkUrl} key={chapter._id} target={target}
-                        className="group relative bg-[#111] border border-[#222] rounded-xl overflow-hidden hover:border-red-500/50 transition-all hover:-translate-y-1 h-[400px] flex flex-col">
+                      <div 
+                        key={chapter._id} 
+                        onClick={() => handleChapterClick(chapter)}
+                        className="cursor-pointer group relative bg-[#111] border border-[#222] rounded-xl overflow-hidden hover:border-red-500/50 transition-all hover:-translate-y-1 h-[400px] flex flex-col"
+                      >
                         <div className="h-2/3 bg-[#222] relative overflow-hidden">
                           {chapter.coverUrl ? (
                             <img src={chapter.coverUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt="" />
@@ -341,7 +428,7 @@ export default function Home() {
                             </div>
                           )}
                           <div className="absolute top-4 right-4">
-                            {!isFree ? (
+                            {isLocked ? (
                               <div className="bg-black/80 backdrop-blur text-yellow-500 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 border border-yellow-500/30">
                                 <Lock className="w-3 h-3" /> PREMIUM
                               </div>
@@ -354,14 +441,14 @@ export default function Home() {
                           <div className="text-xs font-mono text-gray-500 mb-2">CHAPTER {chapter.chapterNumber.toString().padStart(2, '0')}</div>
                           <h3 className="text-xl font-bold mb-2 group-hover:text-red-500 transition-colors line-clamp-2">{chapter.title}</h3>
                           <div className="mt-auto flex items-center text-sm font-bold text-gray-400 group-hover:text-white transition-colors">
-                            {isFree ? (
+                            {!isLocked ? (
                               <><Play className="w-4 h-4 mr-2 fill-current" /> ЧИТАТЬ</>
                             ) : (
                               <><KeyRound className="w-4 h-4 mr-2" /> ВВЕСТИ КОД</>
                             )}
                           </div>
                         </div>
-                      </Link>
+                      </div>
                     )
                   })}
                 </div>
