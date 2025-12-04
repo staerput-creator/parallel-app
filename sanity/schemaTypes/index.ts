@@ -3,9 +3,10 @@ import post from './post'
 import chapter from './chapter'
 import strawpoll from './strawpoll' 
 import youtube from './youtube'
-import vkvideo from './vkvideo' // <-- 1
-import rutube from './rutube'   // <-- 2
+import vkvideo from './vkvideo' 
+import rutube from './rutube'
+import roadmap from './roadmap'
 
 export const schema: { types: SchemaTypeDefinition[] } = {
-  types: [post, chapter, strawpoll, youtube, vkvideo, rutube], // <-- Добавь в список
+  types: [post, chapter, strawpoll, youtube, vkvideo, rutube, roadmap], // <-- Добавь в список
 }

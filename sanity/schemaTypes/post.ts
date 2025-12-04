@@ -12,6 +12,19 @@ export default defineType({
       validation: (rule) => rule.required(),
     }),
     defineField({
+      name: 'language',
+      title: 'Язык / Language',
+      type: 'string',
+      options: {
+        list: [
+          { title: '🇷🇺 Русский', value: 'ru' },
+          { title: '🇺🇸 English', value: 'en' }
+        ],
+      },
+      initialValue: 'ru', // Старые посты автоматически станут русскими
+      validation: (rule) => rule.required(),
+    }),
+    defineField({
       name: 'slug',
       title: 'Ссылка (Slug)',
       type: 'slug',

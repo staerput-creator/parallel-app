@@ -16,6 +16,19 @@ export default defineType({
       title: 'Название главы',
       type: 'string',
     }),
+    defineField({
+      name: 'language',
+      title: 'Язык / Language',
+      type: 'string',
+      options: {
+        list: [
+          { title: '🇷🇺 Русский', value: 'ru' },
+          { title: '🇺🇸 English', value: 'en' }
+        ],
+      },
+      initialValue: 'ru', // Старые посты автоматически станут русскими
+      validation: (rule) => rule.required(),
+    }),
     // --- НОВОЕ ПОЛЕ ---
     defineField({
       name: 'accessCode',

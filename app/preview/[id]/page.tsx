@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { createClient } from "next-sanity";
-import PostView from "@/components/PostView";
 import { useParams } from 'next/navigation';
 
 // Создаем клиент с токеном прямо в браузере
@@ -66,10 +65,5 @@ export default function PreviewPage() {
     return <div className="min-h-screen bg-[#0a0a0a] text-white p-10">Post not found</div>;
   }
 
-  return (
-    <div className="bg-[#0a0a0a] min-h-screen p-4">
-        {/* Используем наш компонент отображения поста */}
-        <PostView post={post} />
-    </div>
-  );
+
 }
