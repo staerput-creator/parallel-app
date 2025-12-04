@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom'; // Импортируем Портал
 import { X } from 'lucide-react';
 
 // --- GAME ENGINE CONSTANTS ---
@@ -22,22 +23,31 @@ interface GameObject {
 
 interface GameOverlayProps {
   onClose: () => void;
-  texts: any; // Передаем переводы для игры
+  texts: any;
 }
 
 export default function GameOverlay({ onClose, texts }: GameOverlayProps) {
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
+  const [mounted, setMounted] = useState(false); // Для портала
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  
+  // ФИКС ОШИБКИ БИЛДА: Добавили 0 как начальное значение
   const requestRef = useRef<number>(0);
   
-  // Refs для состояния игры (чтобы не вызывать ререндер)
   const playerRef = useRef<GameObject>({ x: 400, y: 500, w: 30, h: 30, dir: 'up', color: '#10b981', id: 0 });
   const bulletsRef = useRef<GameObject[]>([]);
   const enemiesRef = useRef<GameObject[]>([]);
   const keysRef = useRef<{ [key: string]: boolean }>({});
   const lastShotTime = useRef(0);
   const lastSpawnTime = useRef(0);
+
+  // Проверка монтирования компонента (нужно для доступа к document.body)
+  useEffect(() => {
+    setMounted(true);
+    return () => setMounted(false);
+  }, []);
 
   const resetGame = () => {
     playerRef.current = { x: 385, y: 550, w: 30, h: 30, dir: 'up', color: '#10b981', id: 0 };
@@ -71,7 +81,7 @@ export default function GameOverlay({ onClose, texts }: GameOverlayProps) {
       lastShotTime.current = Date.now();
     }
 
-    // Bullets Move & Cleanup
+    // Bullets Logic
     bulletsRef.current.forEach(b => {
       if (b.dir === 'up') b.y -= BULLET_SPEED;
       if (b.dir === 'down') b.y += BULLET_SPEED;
@@ -88,13 +98,11 @@ export default function GameOverlay({ onClose, texts }: GameOverlayProps) {
     
     enemiesRef.current.forEach(e => {
       e.y += ENEMY_SPEED;
-      // Collision Player
       if (playerRef.current.x < e.x + e.w && playerRef.current.x + playerRef.current.w > e.x && playerRef.current.y < e.y + e.h && playerRef.current.h + playerRef.current.y > e.y) {
         setGameOver(true);
       }
     });
 
-    // Bullet Hit Enemy
     bulletsRef.current.forEach(b => {
       enemiesRef.current.forEach((e, eIdx) => {
         if (b.x < e.x + e.w && b.x + b.w > e.x && b.y < e.y + e.h && b.h + b.y > e.y) {
@@ -126,8 +134,7 @@ export default function GameOverlay({ onClose, texts }: GameOverlayProps) {
     if (!gameOver) {
       ctx.fillStyle = playerRef.current.color;
       ctx.fillRect(playerRef.current.x, playerRef.current.y, 30, 30);
-      ctx.fillStyle = '#059669'; // Turret
-      // ... упрощенная отрисовка башни, чтобы код не раздувать, логика та же ...
+      ctx.fillStyle = '#059669';
       ctx.fillRect(playerRef.current.x + 10, playerRef.current.y, 10, 20); 
     }
 
@@ -163,27 +170,33 @@ export default function GameOverlay({ onClose, texts }: GameOverlayProps) {
       window.removeEventListener('keyup', handleGameKeysUp);
       if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
-  }, [gameOver]); // Зависимость от gameOver для перезапуска логики при рестарте
+  }, [gameOver]);
 
-  return (
-    <div className="fixed inset-0 z-[300] bg-black flex items-center justify-center font-mono">
-       <button onClick={onClose} className="absolute top-4 right-4 text-green-500 hover:text-white p-2 border border-green-500/30 rounded"><X className="w-6 h-6" /></button>
-       <div className="relative border-4 border-green-900 rounded-lg bg-[#05100a] shadow-[0_0_50px_rgba(16,185,129,0.2)]">
-         <div className="absolute top-4 left-4 text-green-500 text-xs tracking-widest">{texts.gameTitle}</div>
+  // Если компонент еще не смонтирован на клиенте, ничего не рендерим
+  if (!mounted) return null;
+
+  // ИСПОЛЬЗУЕМ PORTAL: Рендерим игру прямо в body, поверх всего остального
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center font-mono backdrop-blur-sm">
+       <button onClick={onClose} className="absolute top-6 right-6 text-green-500 hover:text-white p-2 border border-green-500/30 rounded transition-colors bg-black"><X className="w-8 h-8" /></button>
+       
+       <div className="relative border-4 border-green-900 rounded-lg bg-[#05100a] shadow-[0_0_100px_rgba(16,185,129,0.3)]">
+         <div className="absolute top-4 left-4 text-green-500 text-xs tracking-widest uppercase">{texts.gameTitle}</div>
          <div className="absolute top-4 right-4 text-green-500 text-xl font-bold">{texts.score}: {score}</div>
          
-         <canvas ref={canvasRef} width={GAME_WIDTH} height={GAME_HEIGHT} className="block" />
+         <canvas ref={canvasRef} width={GAME_WIDTH} height={GAME_HEIGHT} className="block w-full h-full max-w-[90vw] max-h-[80vh] object-contain bg-black/50" />
 
          {gameOver && (
-           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm">
-              <h2 className="text-4xl font-black text-red-500 mb-4 animate-pulse">{texts.gameOver}</h2>
-              <p className="text-green-500 mb-8 text-xl">{texts.score}: {score}</p>
-              <button onClick={resetGame} className="px-8 py-3 bg-green-600 hover:bg-green-500 text-black font-bold uppercase tracking-widest rounded">{texts.restart}</button>
+           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md z-10">
+              <h2 className="text-5xl font-black text-red-500 mb-6 animate-pulse tracking-tighter">{texts.gameOver}</h2>
+              <p className="text-green-500 mb-10 text-2xl font-mono">{texts.score}: {score}</p>
+              <button onClick={resetGame} className="px-10 py-4 bg-green-600 hover:bg-green-500 text-black font-bold uppercase tracking-widest rounded text-lg transition-transform hover:scale-105">{texts.restart}</button>
            </div>
          )}
          
-         {!gameOver && <div className="absolute bottom-4 left-0 w-full text-center text-green-500/50 text-xs">{texts.controls}</div>}
+         {!gameOver && <div className="absolute bottom-4 left-0 w-full text-center text-green-500/50 text-xs uppercase tracking-widest">{texts.controls}</div>}
        </div>
-    </div>
+    </div>,
+    document.body
   );
 }
