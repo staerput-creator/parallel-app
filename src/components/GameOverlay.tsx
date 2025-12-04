@@ -29,7 +29,7 @@ export default function GameOverlay({ onClose, texts }: GameOverlayProps) {
   const [score, setScore] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const requestRef = useRef<number>();
+  const requestRef = useRef<number>(0);
   
   // Refs для состояния игры (чтобы не вызывать ререндер)
   const playerRef = useRef<GameObject>({ x: 400, y: 500, w: 30, h: 30, dir: 'up', color: '#10b981', id: 0 });
