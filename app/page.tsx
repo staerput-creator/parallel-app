@@ -13,16 +13,13 @@ import imageUrlBuilder from '@sanity/image-url';
 import Giscus from '@giscus/react'; 
 import { useRouter } from 'next/navigation';
 
-// --- ИМПОРТЫ ИЗ НОВЫХ ФАЙЛОВ ---
+// --- ИМПОРТЫ ---
 import { categories, themes, translations, CategoryId, Language, ThemeConfig } from '@/src/lib/siteData';
 import { getEmbedUrl, getYoutubeId, getRutubeId, getVkEmbedUrl, formatDate } from '@/src/lib/utils';
-import GameOverlay from '@/src/components/GameOverlay';
+// УБРАЛИ ИМПОРТ GameOverlay - ОН ТУТ БОЛЬШЕ НЕ НУЖЕН
 
-// --- Image Builder ---
 const builder = imageUrlBuilder(client);
-function urlFor(source: any) {
-  return builder.image(source);
-}
+function urlFor(source: any) { return builder.image(source); }
 
 // --- Types ---
 interface Post {
@@ -93,8 +90,7 @@ export default function Home() {
   const [currentTrack, setCurrentTrack] = useState(PLAYLIST[0]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // --- GAME STATE ---
-  const [isGameOpen, setIsGameOpen] = useState(false);
+  // УБРАЛИ STATE isGameOpen - ОН БОЛЬШЕ НЕ НУЖЕН
 
   // --- MODALS ---
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -153,14 +149,17 @@ export default function Home() {
     }, 100);
   };
 
-  // --- KONAMI CODE LISTENER ---
+  // --- KONAMI CODE LISTENER (ПЕРЕХОД НА СЕКРЕТНУЮ СТРАНИЦУ) ---
   useEffect(() => {
     let cursor = 0;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === KONAMI_CODE[cursor]) {
         cursor++;
         if (cursor === KONAMI_CODE.length) {
-          setIsGameOpen(true);
+          // 1. Выдаем "пропуск" (сохраняем в сессии браузера)
+          sessionStorage.setItem('parallel_secret_access', 'granted');
+          // 2. Редиректим на секретную страницу
+          router.push('/secret');
           cursor = 0;
         }
       } else {
@@ -169,7 +168,7 @@ export default function Home() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [router]);
 
   // --- PORTABLE TEXT COMPONENTS ---
   const ptComponents = useMemo(() => ({
@@ -332,12 +331,9 @@ export default function Home() {
       
       <audio ref={audioRef} loop src={currentTrack} onEnded={handleTrackEnded} />
 
-      {/* --- GAME OVERLAY --- */}
-      {isGameOpen && (
-        <GameOverlay onClose={() => setIsGameOpen(false)} texts={t} />
-      )}
+      {/* --- ИГРОВОЙ ОВЕРЛЕЙ УДАЛЕН ИЗ DOM СТРАНИЦЫ --- */}
 
-      {/* --- MENU OVERLAY (Контакты) --- */}
+      {/* --- MENU OVERLAY --- */}
       {isInfoMenuOpen && (
         <div className="fixed inset-0 z-[200] flex justify-end bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="w-full md:w-[400px] h-full bg-[#0a0a0a] border-l border-white/10 shadow-2xl p-8 flex flex-col relative animate-in slide-in-from-right duration-300">
@@ -408,7 +404,7 @@ export default function Home() {
       {/* SIDEBAR */}
       <aside className="fixed bottom-0 w-full md:relative md:w-72 md:h-full z-50 flex md:flex-col justify-between shadow-2xl backdrop-blur-md border-t md:border-t-0 md:border-r transition-colors duration-500" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>
         <div className="hidden md:flex flex-col p-8 border-b relative overflow-hidden transition-colors duration-500" style={{ borderColor: 'var(--card-border)' }}>
-          <h1 className="text-3xl font-extrabold tracking-tighter uppercase leading-none text-white z-10">ПАРАЛЛЕЛЬ V3</h1>
+          <h1 className="text-3xl font-extrabold tracking-tighter uppercase leading-none text-white z-10">ПАРАЛЛЕЛЬ</h1>
           <p className="text-[10px] uppercase tracking-[0.2em] font-bold mt-2 opacity-70 transition-all duration-500" style={{ color: 'var(--accent-color)' }}>{currentTheme.subtitle}</p>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 py-2 md:py-8 flex md:flex-col justify-around md:justify-start w-full md:space-y-3">
@@ -472,7 +468,7 @@ export default function Home() {
       {/* MAIN */}
       <main className="flex-1 flex flex-col h-full overflow-hidden relative transition-all duration-700" style={{ backgroundImage: currentTheme.bgImage }}>
         <header className="md:hidden flex items-center justify-between px-4 py-4 border-b z-40" style={{ backgroundColor: 'var(--sidebar-bg)', borderColor: 'var(--card-border)' }}>
-            <h1 className="font-extrabold text-white text-lg tracking-tight uppercase">ПАРАЛЛЕЛЬ V3</h1>
+            <h1 className="font-extrabold text-white text-lg tracking-tight uppercase">ПАРАЛЛЕЛЬ</h1>
             <div className="flex gap-4 items-center">
                 <button onClick={toggleAudio} className={`p-2 rounded ${isPlaying ? 'text-green-500' : 'text-white/50'}`}>{isPlaying ? <Volume2 className="w-5 h-5" /> : <Headphones className="w-5 h-5" />}</button>
                 <button onClick={toggleLanguage} className="text-xs font-bold font-mono px-2 py-1 border border-white/20 rounded uppercase">{lang}</button>
@@ -513,8 +509,8 @@ export default function Home() {
              </div>
           ) : (
             <>
-              {/* --- ПРОЗРАЧНЫЙ СТЕКЛЯННЫЙ HEADER (Исправлено!) --- */}
-              <div className="sticky top-0 z-80 bg-transparent backdrop-blur-md pt-8 pb-6 mb-8 border-b border-white/5">
+              {/* --- ПРОЗРАЧНЫЙ СТЕКЛЯННЫЙ HEADER --- */}
+              <div className="sticky top-0 z-50 bg-transparent backdrop-blur-md pt-8 pb-6 mb-8 border-b border-white/5">
                 <div className="flex items-center gap-2 mb-2">
                     <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--accent-color)' }}></span>
                     <span className="text-xs font-mono opacity-70 uppercase tracking-widest" style={{ color: 'var(--accent-color)' }}>{t.systemOnline}</span>
@@ -531,7 +527,7 @@ export default function Home() {
                     <div className="p-10 border border-dashed text-center opacity-50 font-mono text-sm" style={{ borderColor: 'var(--card-border)' }}>{t.noData}</div>
                     ) : (
                     <div className="space-y-8">
-                        {/* --- САМА КАРТА --- */}
+                        {/* --- САМА КАРТА (ЗАГОЛОВОК УДАЛЕН) --- */}
                         <div className="relative w-full rounded-xl overflow-hidden border border-white/20 shadow-2xl bg-[#050505] group">
                             {roadmapData.mapImageUrl ? (
                                 <div className="relative w-full">
@@ -616,7 +612,7 @@ export default function Home() {
                     )}
                 </div>
               ) : activeCategory === 'premium' ? (
-                // --- PREMIUM (Книги) ---
+                // ... (Premium и Posts код остается таким же) ...
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
                   {filteredChapters.length === 0 && <div className="col-span-full p-10 border border-dashed text-center opacity-50 font-mono text-sm" style={{ borderColor: 'var(--card-border)' }}>{t.noChapters}</div>}
                   {filteredChapters.map((chapter) => {
@@ -649,7 +645,6 @@ export default function Home() {
                   })}
                 </div>
               ) : (
-                // --- POSTS (Обычные посты) ---
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredPosts.length === 0 && <div className="col-span-full p-10 border border-dashed text-center opacity-50 font-mono text-sm" style={{ borderColor: 'var(--card-border)' }}>{t.noData}</div>}
                   {filteredPosts.filter(p => activeCategory === 'all' || p.category === activeCategory).map((post) => (
